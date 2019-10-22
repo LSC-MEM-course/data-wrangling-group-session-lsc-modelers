@@ -1,0 +1,5 @@
+* Data Wrangling Group Session
+
+This is a (mostly) empty repo for working as a group in the Data
+Wrangling session(s).  Please add folders under this repo to help keep
+in organized when we are working together!
