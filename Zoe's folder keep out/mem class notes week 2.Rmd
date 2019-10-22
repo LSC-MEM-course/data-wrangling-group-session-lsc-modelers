@@ -1,0 +1,9 @@
+---
+title: "MEM class notes week 2"
+output: html_document
+---
+
+```{r}
+
+```
+
