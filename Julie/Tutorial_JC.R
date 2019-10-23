@@ -208,6 +208,9 @@ ggplot(sleep_cellmeans, aes(group, mean)) +
 
 ######### Extension 5 #################
 
+
+fam <- read_xlsx("Summary_Exp2.xlsx", sheet = 2)
+
 names(fam)<-make.names(names(fam),unique = TRUE) 
 
 
@@ -242,6 +245,11 @@ fam_mono$Condition[fam_mono$Condition==10] <- 3
 
 fam_mono$TMR <- recode(fam_mono$TMR, "1" = "0", "2" = "-5")
 fam_mono$Age <- recode(fam_mono$Age, "1" = "Young", "2" = "Older")
+
+std.err <- function(x) {
+  output = sd(x)/length(x)
+}
+std.err(x)
 
 fam_mono_mean <- fam_mono %>% group_by(Condition, TMR, Age) %>% summarise(mean = mean(Score_1),
                                                              se = std.err(Score_1))
