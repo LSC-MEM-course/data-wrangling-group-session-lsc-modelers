@@ -209,7 +209,7 @@ ggplot(sleep_cellmeans, aes(group, mean)) +
 ######### Extension 5 #################
 
 
-fam <- read_xlsx("Summary_Exp2.xlsx", sheet = 2)
+fam <- read_xlsx("Julie/Summary_Exp2.xlsx", sheet = 2)
 
 names(fam)<-make.names(names(fam),unique = TRUE) 
 
@@ -247,19 +247,43 @@ fam_mono$TMR <- recode(fam_mono$TMR, "1" = "0", "2" = "-5")
 fam_mono$Age <- recode(fam_mono$Age, "1" = "Young", "2" = "Older")
 
 std.err <- function(x) {
-  output = sd(x)/length(x)
+  sd(x)/sqrt(length(x))
 }
-std.err(x)
 
-fam_mono_mean <- fam_mono %>% group_by(Condition, TMR, Age) %>% summarise(mean = mean(Score_1),
-                                                             se = std.err(Score_1))
+
+fam_mono_mean <- fam_mono %>% group_by(Condition, TMR, Age) %>% 
+  summarise(mean = mean(Score_1), se = std.err(Score_1))
+
+
 ggplot(fam_mono_mean, aes(TMR, mean, fill = Condition)) +
-  geom_bar(stat = "identity", colour = "black", position = position_dodge2(padding = .2), width = 3) +
-  geom_errorbar(aes(ymin = mean - (1.96*se), ymax = mean + (1.96*se)), position = position_dodge2(padding = .5)) +
+  geom_bar(stat = "identity", color = "black",
+           position = "dodge") +
+  facet_wrap(~ Age) +
+  geom_errorbar(aes(ymin = mean - (1.96*se), ymax = mean + (1.96*se),
+                    group = Condition),
+                    position = position_dodge(width = .9),
+                    width = .3) +
   scale_fill_manual(name = "Identity of\nFamiliar Voice", 
-                    labels=c("Familiar Target\n(Condition 1)", "Familiar Masker\n(Condition 2)", "Unfamiliar\n(Condition 3)"),
+                    labels=c("Familiar Target\n(Condition 1)", 
+                             "Familiar Masker\n(Condition 2)", 
+                             "Unfamiliar\n(Condition 3)"),
                     values=c("#8856a7","#8c96c6","#edf8fb")) +
   scale_y_continuous(name = "Proportion Corrent", expand = c(0,0), limits = 0:1.2) +
+  theme_classic()
+
+ggplot(fam_mono_mean, aes(TMR, mean, fill = Condition)) +
+  geom_bar(stat = "identity", colour = "black",
+           position = position_dodge2(padding = .2),
+           width = 3) +
+  geom_errorbar(aes(ymin = mean - (1.96*se),
+                    ymax = mean + (1.96*se)),
+                    position = position_dodge2(padding = .5)) +
+  scale_fill_manual(name = "Identity of\nFamiliar Voice", 
+                    labels=c("Familiar Target\n(Condition 1)", 
+                             "Familiar Masker\n(Condition 2)", 
+                             "Unfamiliar\n(Condition 3)"),
+                    values=c("#8856a7","#8c96c6","#edf8fb")) +
+  scale_y_continuous(name = "Proportion Corrent", expand = c(0,0), limits = 0:1.3) +
   theme_classic()+
   facet_wrap(~ Age)
 
