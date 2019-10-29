@@ -1,0 +1,689 @@
+---
+title: "Whanything-Focus"
+output: html_document
+---
+directories
+```{r}
+input_file = "/Users/ceshi/Documents/Work/WHAnalysis/transcribed/scripts-2019oct13/coded_2019-10-13_WHanything.csv"
+input_dir = "/Users/ceshi/Documents/Work/WHAnalysis/transcribed/scripts-2019oct13"
+```
+
+
+
+```{r setup, include=FALSE}
+
+
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(lme4)
+# The palette with grey:
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+# The palette with black:
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+
+
+setwd(input_dir)
+dataset <- read.csv(input_file) 
+
+#names(dataset) <- make.names(names(dataset), unique = TRUE) #this changes all the spaces in names dots 
+#dataset contains both test and filler sentences, so need to weed out those first
+
+#each is coded as factor
+
+```
+
+May 21
+Adding a new parameter "utt"; specifying whether the utterance is one of the five types:
+1. Fragment answer, "a car", code "c"
+2. Fragment answer, "apple and a pear", code "a"
+3. polar particle "fangle/en/nodding", code "y"
+4. polar particle "meifang/en-en/shaking head", code "n"
+5. polar particle and elaboration "yes/no, she packed apple and pear", code "e"
+6. polar particle and elaboration "yes/no, she didn't pack the car", code "r"
+6. other: "o"
+
+
+Jun 22
+- Transcribed more data from adults and kids for Focus, saved under the folder scripts-jun22
+- code for whether the answer contains "a car" under "car", and "utt"
+- If "a car" is mentioned as an extra information, we code "car" as 0
+- Add "yn" collumn 
+
+```{r transform dataset}
+#filter out the fillers
+df_fc <- filter(dataset, grepl('FC', dataset$expName)) %>% 
+  filter(include. != "x",
+         grepl("FC", dataset$condition1)
+         ) %>% 
+  filter(participant != 127,
+         participant != 128,
+         participant != 132,
+         participant != 135,
+         participant != 151,
+         participant != 153,
+         participant != 158,
+         participant != 160,
+         participant != 161,
+         participant != 162,
+         participant != 163,
+         participant != 163,
+         participant != 166,
+         participant != 172,
+         participant != 179,
+         participant != 183,
+         participant != 185,
+         participant != 201,
+         participant != 253,
+         participant != 257,
+         participant != 259,
+         participant != 262,
+         participant != 165
+         )
+
+#add kids = 1, adults = 0
+df_fc$age_group <- as.factor(ifelse(df_fc$participant<500, 1, 0))
+#code the two independent variable: wh/np condition
+df_fc$whnp <- as.factor(ifelse(grepl('wh', df_fc$expName), 1, 0)) 
+#with or without prominance condition
+df_fc$foc <-  as.factor(ifelse(grepl('1', df_fc$expName), 1, 0))
+#the two measures in this experiment is whether or not kid offer "car"-response
+#and the detailed responses given by kids                           
+df_fc$car <- ifelse(grepl('c', df_fc$utt), 1, 0)
+
+df_fc$prag <- recode(df_fc$utt, o= "o", y="y", y="y", n="y", a= "a",c="c", e="e", r="e")
+df_fc$yn <-   recode(df_fc$prag, o= "o", y = "p", e = "p", a= "a",c="c")
+df_fc$polar <- ifelse(df_fc$yn == "p", 1, 0)
+
+```
+plotting "car" responses
+
+```{r}
+df_fc_sum <- df_fc %>%
+ group_by(participant, expName, age_group, whnp,foc) %>% 
+  summarize(proportion = mean(car)) %>% 
+  group_by(expName, age_group, whnp,foc) %>% 
+  summarise(avg_prop = mean(proportion), sd=sd(proportion), n=n()) %>% 
+  mutate(SEM = sd/sqrt(n),upper=avg_prop+SEM, lower= avg_prop-SEM)
+
+
+
+
+#df_fc_sum$expName <- factor(df_fc_sum$expName,levels=c("V wh, Wh-question","VnotV wh, Polar quesiton","V NP, Assertion","VnotV NP, Polar question"))
+
+df_fc_sum$expName <- factor(df_fc_sum$expName,levels=c("FC1wh","FC0wh","FC1bn","FC0bn"))
+
+df_fc_sum$foc <- factor(df_fc_sum$foc,levels=c("1","0"))
+df_fc_sum$whnp <- factor(df_fc_sum$whnp,levels=c("1","0"))
+label_facet <- c("0" ="adults", "1" = "children")
+```
+
+
+Measuring whether the answer is "a car":
+```{r}
+fc_car <- ggplot(df_fc_sum, aes(x=whnp, y=avg_prop, fill = foc))+
+  geom_bar(stat="identity", position = position_dodge(0.9)) + 
+  geom_errorbar(aes(ymin=lower, ymax=upper), stat = "identity", width = 0.2, position=position_dodge(0.9)) +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+  labs(y = '% "a car"-responses', x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+  axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(labels=c("wh","NP")) +
+  scale_fill_manual(values=cbPalette[c(2,5)], name = "", breaks=c(1, 0), labels=c("+Prominence", "-Prominence")) +
+ # scale_color_manual(name = "", values = cbbPalette[c(1,1)], ) +
+  theme_bw()
+
+fc_car
+```
+Stats on "a car" measure
+
+```{r}
+m1_fc <- glmer(formula = car ~foc*whnp+age_group+ (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(m1_fc)
+```
+
+```{r}
+m2_fc <- glmer(formula = car ~foc*whnp+ (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(m2_fc)
+
+```
+```{r}
+m3_fc <- glmer(formula = car ~foc+whnp+age_group+ (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(m3_fc)
+
+```
+Model comparison
+```{r}
+AIC(m1_fc, m2_fc, m3_fc)
+```
+
+Stats: no random factor, just fix factor
+
+```{r}
+glm_fc1 <- glm(car~foc*whnp+age_group, family = binomial, data = df_fc)
+summary(glm_fc1)
+```
+
+```{r}
+glm_fc2 <- glm(car~foc*whnp, family = binomial, data = df_fc)
+summary(glm_fc2)
+```
+
+
+
+```{r}
+glm_fc2 <- glm(car~foc+whnp+age_group, family = binomial, data = df_fc)
+summary(glm_fc2)
+```
+
+```{r}
+#stats: no interaction, just focus
+
+#just the kids
+dfk_fc <- filter(df_fc, age_group=="1")
+m3_fck <- glm(car~foc*whnp, family = binomial, data = dfk_fc)
+summary(m3_fck)
+#just the adults
+dfa_fc <- filter(df_fc, age_group=="0")
+m3_fca <- glm(car~foc*whnp, family = binomial, data = dfa_fc)
+summary(m3_fca)
+```
+Measuring whether the answer contains a polar particle:
+
+
+
+```{r}
+df_fc_polar <- df_fc %>%
+ group_by(participant, expName, age_group, whnp,foc, polar) %>% 
+  summarize(proportion = mean(polar)) %>% 
+  group_by(expName, age_group, whnp,foc) %>% 
+  summarise(avg_prop = mean(proportion), sd=sd(proportion), n=n()) %>% 
+  mutate(SEM = sd/sqrt(n),upper=avg_prop+SEM, lower= avg_prop-SEM)
+
+df_fc_polar$expName <- factor(df_fc_polar$expName,levels=c("FC1wh","FC0wh","FC1bn","FC0bn"))
+
+df_fc_polar$foc <- factor(df_fc_polar$foc,levels=c("1","0"))
+df_fc_polar$whnp <- factor(df_fc_polar$whnp,levels=c("1","0"))
+```
+
+Plotting this measurement 
+```{r}
+fc_polar <- ggplot(df_fc_polar, aes(x=whnp, y=avg_prop, fill = foc))+
+  geom_bar(stat="identity", position = position_dodge(0.9)) + 
+  geom_errorbar(aes(ymin=lower, ymax=upper), stat = "identity", width = 0.2, position=position_dodge(0.9)) +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+  labs(y = "% yes/no-responses", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+  axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(breaks=c(1, 0),labels=c("shenme","NP")) +
+  scale_fill_manual(values=c("#0033CC", "#66CCFF"), name = "", breaks=c(1, 0), labels=c("+Prominence", "-Prominence")) +
+ # scale_fill_grey(name = "", breaks=c(1, 0), labels=c("+Prominence", "-Prominence")) +
+  theme_bw()
+
+fc_polar
+```
+Stats
+
+```{r}
+mfc_pol1 <- glmer(formula = polar ~foc*whnp+age_group+ (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(mfc_pol1)
+print(mfc_pol1,  corr = FALSE)
+```
+Stats 2: just foc, whnp, no age
+
+```{r}
+mfc_pol2 <- glmer(formula = polar ~foc*whnp + (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(mfc_pol2)
+
+```
+```{r}
+mfc_pol3 <- glmer(formula = polar ~foc+whnp + (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(mfc_pol3)
+
+```
+
+```{r}
+mfc_pol4 <- glmer(formula = polar ~foc+whnp+age_group + (1|participant) +(1|sentence), family = binomial, data = df_fc)
+summary(mfc_pol4)
+
+```
+```{r}
+mfc_pol5 <- glm(polar~foc+whnp+foc*whnp+age_group, family = binomial, data = df_fc)
+summary(mfc_pol5)
+
+```
+Model comparison using AIC
+```{r}
+AIC(mfc_pol1,mfc_pol2,mfc_pol3, mfc_pol4, mfc_pol5)
+
+```
+
+```{r}
+df_fc$prag <- recode(df_fc$utt, o= "o", y="y", y ="y", n="y", a= "a",c="c", e="e", r="e", w = "a")
+df_fc$yn <-   recode(df_fc$prag, o= "o", y = "p", e = "p", a= "a",c="c")
+df_fc$polar <- ifelse(df_fc$yn == "p", 1, 0)
+
+fc_utt <- df_fc %>% 
+  group_by(expName, age_group, whnp,foc, prag) %>% 
+  summarise(utt_n = n()) 
+fc_utt$prag <- factor(fc_utt$prag,levels=c("y","e","o","a","c"))
+fc_utt$expName <- factor(fc_utt$expName,levels=c("FC1wh","FC0wh","FC1bn","FC0bn"))
+label_facet <- c("0" ="adults", "1" = "children")
+```
+
+```{r}
+p_fcutt <- ggplot(fc_utt, aes(x=expName, y = utt_n, fill = foc, alpha = prag, color = foc ))+
+  geom_bar(stat="identity",position = "fill") +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+    labs(y = "types of answers", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+    legend.position = "none",
+  #axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(name = "", labels=c("+","-","+","-")) +
+  scale_alpha_manual(name = "", values = c(0.1,0.3,0.4,0.5,0.6,1)) +
+  scale_fill_manual(name = "", values=cbPalette[c(1,2,1,2,1,2)])+
+  scale_color_manual(name = "", values=cbPalette[c(1,2,1,2,1,2)])+
+  theme_bw()
+
+  
+p_fcutt
+
+```
+
+
+plotting all utterance types
+
+```{r}
+p_fcutt_noshow <- ggplot(fc_utt, aes(x=expName, y = utt_n, fill = prag))+
+  geom_bar(stat="identity",position = "fill") +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+    labs(y = "% of responses", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+    legend.position = "none",
+  #axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 2)
+  ) +
+  scale_x_discrete(name = "", labels=c("+","-","+","-")) +
+  #scale_alpha_manual(name = "", values = c(0.3,0.4,0.5,0.6,1)) +
+  scale_fill_manual(name = "", breaks = c("y","e","o","a","c"), values=cbPalette[c(6,3,1,4,5)], labels = c('"No"','"No, a pear and an apple"', '"Other"', '"A pear and an apple"', '"A car"'))+
+  #scale_color_manual(name = "", values=cbPalette[c(2,1,2,1)])+
+  theme_bw()
+
+  
+p_fcutt_noshow
+```
+
+
+
+
+YN experiment
+First plot using "fragment answer" as the measurement
+```{r}
+df_yn <- filter(dataset, grepl('YN', type))
+  
+df_yn$age_group <- as.factor(ifelse(df_yn$participant<500, 1, 0))
+df_yn$whnp <- as.factor(ifelse(grepl('wh', df_yn$expName), 1, 0))
+df_yn$vnotv <-  as.factor(ifelse(grepl('1', df_yn$expName), 1, 0))
+#df_yn$wh_resp <-  as.factor(ifelse(grepl('w', df_yn$prag), 1, 0))
+#df_yn <- separate(df_yn, audio, c("sentence", "no"), sep = -1)
+df_yn$utt <- recode(df_yn$utt, o= "o", y="y", y ="y", n="y", a= "a",c="c", e="e", r="e")
+df_yn$yn <-   recode(df_yn$utt, o= "o", y = "p", e = "p", a= "a",c="c")
+df_yn$polar <- ifelse(df_yn$yn == "p", 1, 0)
+
+
+df_yn_polar <- df_yn %>%
+ group_by(participant, expName, age_group, whnp,vnotv) %>% 
+  summarize(proportion = mean(polar)) %>% 
+  group_by(expName, age_group, whnp,vnotv) %>% 
+  summarise(avg_prop = mean(proportion), sd=sd(proportion), n=n()) %>% 
+  mutate(SEM = sd/sqrt(n),upper=avg_prop+SEM, lower= avg_prop-SEM)
+
+df_yn_polar$expName <- factor(df_yn_polar$expName,levels=c("YN1wh","YN0wh","YN1bn","YN0bn"))
+
+df_yn_polar$vnotv <- factor(df_yn_polar$vnotv,levels=c("1","0"))
+df_yn_polar$whnp <- factor(df_yn_polar$whnp,levels=c("1","0"))
+```
+
+
+
+```{r}
+
+#df_yn_sum$expName <- factor(df_yn_sum$expName,levels=c("V wh, Wh-question","VnotV wh, Polar quesiton","V NP, Assertion","VnotV NP, Polar question"))
+
+label_facet <- c("0" ="adults", "1" = "children")
+
+df_yn_polar$vnotv <- factor(df_yn_polar$vnotv,levels=c("0","1"))
+df_yn_polar$whnp <- factor(df_yn_polar$whnp,levels=c("1","0"))
+
+yn_plot <- ggplot(df_yn_polar, aes(x=whnp, y=avg_prop, fill=vnotv))+
+  geom_bar(stat="identity", position = position_dodge(0.9)) + 
+  geom_errorbar(aes(ymin=lower, ymax=upper), stat = "identity", width = 0.2, position=position_dodge(0.9)) +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+    labs(y = "% yes/no responses", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+  axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(labels=c(c("wh","NP"))) +
+  scale_fill_manual(values=c("#0033CC", "#66CCFF"), name = "", breaks=c(0, 1), labels=c("V", "V-not-V"))
+  #scale_fill_grey(name = "", breaks=c(0, 1), labels=c("V", "VnotV"))+
+  theme_bw()
+  
+  
+  
+  yn_plot
+  
+```
+
+"#99FF99","#006600" green
+```{r}
+df_yn$ap <- ifelse(df_yn$utt == "a", 1, 0)
+
+
+df_yn_ap <- df_yn %>%
+ group_by(participant, expName, age_group, whnp,vnotv) %>% 
+  summarize(proportion = mean(ap)) %>% 
+  group_by(expName, age_group, whnp,vnotv) %>% 
+  summarise(avg_prop = mean(proportion), sd=sd(proportion), n=n()) %>% 
+  mutate(SEM = sd/sqrt(n),upper=avg_prop+SEM, lower= avg_prop-SEM)
+
+df_yn_ap$expName <- factor(df_yn_ap$expName,levels=c("YN1wh","YN0wh","YN1bn","YN0bn"))
+
+df_yn_ap$vnotv <- factor(df_yn_ap$vnotv,levels=c("0","1"))
+df_yn_ap$whnp <- factor(df_yn_ap$whnp,levels=c("1","0"))
+
+p_ynap <- ggplot(df_yn_ap, aes(x=whnp, y=avg_prop, fill=vnotv))+
+  geom_bar(stat="identity", position = position_dodge(0.9)) + 
+  geom_errorbar(aes(ymin=lower, ymax=upper), stat = "identity", width = 0.2, position=position_dodge(0.9)) +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+    labs(y = "% 'an apple and a pear' responses", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+  axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(labels=c(c("wh","NP"))) +
+  scale_fill_manual(values=c("#006600","#99FF99"), name = "", breaks=c(0, 1), labels=c("V", "V-not-V"))
+  #scale_fill_grey(name = "", breaks=c(0, 1), labels=c("V", "VnotV"))+
+  theme_bw()
+  
+  
+  
+p_ynap
+```
+
+
+
+Stats
+Interaction
+```{r}
+myn_pol1 <- glmer(formula = polar ~vnotv*whnp+age_group + (1|participant) +(1|sentence), family = binomial, data = df_yn)
+summary(myn_pol1)
+```
+No agegroup
+
+```{r}
+myn_pol2 <- glmer(formula = polar ~vnotv*whnp + (1|participant) +(1|sentence), family = binomial, data = df_yn)
+summary(myn_pol2)
+```
+
+No interaction
+```{r}
+myn_pol3 <- glmer(formula = polar ~vnotv+whnp+age_group + (1|participant) +(1|sentence), family = binomial, data = df_yn)
+summary(myn_pol3)
+```
+```{r}
+myn_pol4 <- glmer(formula = polar ~vnotv+whnp + (1|participant) +(1|sentence), family = binomial, data = df_yn)
+summary(myn_pol4)
+```
+
+```{r}
+AIC(myn_pol1,myn_pol2,myn_pol3,myn_pol4)
+```
+
+
+Only kids
+
+```{r}
+yn_k <-filter(df_yn, age_group =="1")
+myn_k1 <- glmer(formula = polar ~vnotv*whnp + (1|participant) +(1|sentence), family = binomial, data = yn_k)
+summary(myn_k1)
+
+glmyn_k1 <- glm(formula = polar~vnotv*whnp, data = yn_k)
+summary(glmyn_k1)
+```
+```{r}
+yn_a <-filter(df_yn, age_group =="0")
+myn_a1 <- glmer(formula = polar ~vnotv*whnp + (1|participant) +(1|sentence), family = binomial, data = yn_a)
+summary(myn_a1)
+
+
+glmyn_a2 <- glm (formula = polar ~ vnotv*whnp, data = yn_a)
+summary(glmyn_a2)
+```
+
+
+Elaborate on the types of answers that participants give, using a stacked plot
+```{r}
+df_yn$prag <- recode(df_yn$utt, o= "o", y="y", y ="y", n="y", a= "a",c="c", e="e", r="e", w = "a")
+df_yn$yn <-   recode(df_yn$prag, o= "o", y = "p", e = "p", a= "a",c="c")
+df_yn$polar <- ifelse(df_yn$yn == "p", 1, 0)
+
+```
+
+
+```{r}
+yn_utt <- df_yn %>% 
+  group_by(expName, age_group, whnp,vnotv, prag) %>% 
+  summarise(utt_n = n()) 
+yn_utt$prag <- factor(yn_utt$prag,levels=c("y","e","o","c","a"))
+yn_utt$expName <- factor(yn_utt$expName,levels=c("YN0wh","YN1wh","YN0bn","YN1bn"))
+label_facet <- c("0" ="adults", "1" = "children")
+p_ynutt <- ggplot(yn_utt, aes(x=expName, y = utt_n, fill = vnotv, alpha = prag, color = vnotv ))+
+  geom_bar(stat="identity",position = "fill") +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+    labs(y = "types of answers", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+    legend.position = "none",
+  #axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(name = "", labels=c("V","VnotV","V","VnotV")) +
+  scale_alpha_manual(name = "", values = c(0.3,0.4,0.5,0.6,1)) +
+  scale_fill_manual(name = "", values=cbPalette[c(2,1,2,1)])+
+  scale_color_manual(name = "", values=cbPalette[c(2,1,2,1)])+
+  theme_bw()
+
+  
+p_ynutt
+```
+
+```{r}
+label_facet <- c("0" ="adults", "1" = "children")
+p_ynutt_notshown <- ggplot(yn_utt, aes(x=expName, y = utt_n, fill = prag))+
+  geom_bar(stat="identity",position = "fill") +
+  facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+    labs(y = "types of answers", x = " ")+ 
+  theme(axis.line = element_line(colour = "white"),
+    plot.title = element_blank(),
+    legend.position = "none",
+  #axis.title.x = element_blank(),
+  axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  scale_x_discrete(name = "", labels=c("V","VnotV","V","VnotV")) +
+  scale_fill_manual(name = "", breaks = c("y","e","o","c","a"), values=cbPalette[c(6,3,1,5,4)], labels = c('"Yes"','"Yes, an apple and a pear"', '"Other"', '"A car"', '"An apple and a pear"'))+
+  theme_bw()
+p_ynutt_notshown
+```
+
+
+FC0wh = "Wh-Focus, Assertion", FC1wh = "Wh+Focus, Wh-question", FC0bn = "NP-Focus, Assertion", FC1bn = "NP+Focus, Assertion", 
+
+
+a_dens <- ggplot(a_hist, aes(x=test, y= n, fill= e)) +
+  geom_bar(stat="identity", width = 0.5, position = position_dodge(0.9)) + 
+  facet_grid(e~m, labeller=labeller(m = labelm, e= labele)) + 
+  labs(title=paste0("Mandarin adults, n=", 
+                    length(unique(df_wide_adults$participant))), 
+       x = "%of yes-response", y  = "No.of participants") +
+  scale_fill_manual(values=cbPalette[c(4,1)], name="Complement Truth", breaks=c("T", "F")) 
+print(a_dens)
+
+```{r}
+yn_hist=df_yn %>%group_by(participant, expName, age_group, whnp,vnotv) %>%summarize(proportion = mean(as.numeric(wh_resp))-1)  %>%
+  group_by(age_group,whnp,vnotv, proportion) %>% summarise(n=n())%>%
+  filter(age_group=="1") #kids only
+
+yn_hist$vnotv <- factor(yn_hist$vnotv,levels=c("1","0"))
+yn_hist$whnp <- factor(yn_hist$whnp,levels=c("1","0"))
+
+lwhnp <- c("1"="wh", "0"="NP")
+lvnotv <- c("1"="VnotV","0"="V")
+
+yn_dens <-  ggplot(yn_hist, aes(x=proportion, y= n, fill= vnotv)) +
+  geom_bar(stat="identity") + 
+  facet_grid(whnp ~ vnotv, labeller=labeller(whnp = lwhnp, vnotv= lvnotv)) + 
+  labs(x = "%of wh-response", y  = "No.of participants") +
+  scale_fill_manual(values=cbPalette[c(1,2)], name="", labels = lvnotv) +
+  theme_bw()
+print(yn_dens)
+```
+
+
+```{r}
+fc_hist=df_fc %>%group_by(participant, expName, age_group, whnp,foc) %>%summarize(proportion = mean(as.numeric(wh_resp))-1)  %>%
+  group_by(age_group,whnp,foc, proportion) %>% summarise(n=n())%>%
+  filter(age_group=="1") #kids only
+
+fc_hist$vnotv <- factor(fc_hist$foc,levels=c("1","0"))
+fc_hist$whnp <- factor(fc_hist$whnp,levels=c("1","0"))
+
+lwhnp <- c("1"="wh", "0"="NP")
+lfoc <- c("1"="+Focus","0"="-Focus")
+
+
+  
+  
+  
+fc_dens <-  ggplot(fc_hist, aes(x=proportion, y= n, fill= foc)) +
+  geom_bar(stat="identity") + 
+  facet_grid(whnp ~ foc, labeller=labeller(whnp = lwhnp, foc= lfoc)) + 
+  labs(x = "%of wh-response", y  = "No.of participants") +
+  scale_fill_manual(values=cbPalette[c(1,4)], name="", labels = lfoc) +
+  theme_bw()
+fc_dens
+```
+```{r}
+#zoom in on the FCwh conditions, esp when they give wh answers
+fc_ans = df_fc %>% filter(wh_resp== 1) %>% filter(age_group==1)
+fc_ans <- fc_ans %>% 
+ group_by(participant, expName, age_group, whnp,foc) %>% 
+  summarize(proportion = mean(as.numeric(ans))-1) %>% 
+  group_by(age_group,whnp,foc) %>% summarise(avg_prop = mean(proportion), sd=sd(proportion), n=n()) %>% 
+  mutate(SEM = sd/sqrt(n),upper=avg_prop+SEM, lower= avg_prop-SEM)%>%
+  filter(age_group=="1") #kids only
+
+fc_ans
+
+fc_wh_plot <- ggplot(fc_ans, aes(x=whnp, y=avg_prop, fill = foc))+
+  geom_bar(stat="identity", position = position_dodge(0.9)) + 
+  geom_errorbar(aes(ymin=lower, ymax=upper), stat = "identity", width = 0.2, position=position_dodge(0.9)) +
+  #facet_wrap(~ age_group, labeller=labeller(age_group = label_facet)) +
+  labs(y = "% car-responses", x = "")+ 
+  #theme(axis.line = element_line(colour = "white"),
+ #   plot.title = element_blank(),
+ # axis.title.x = element_blank(),
+ # axis.text.x = element_text(angle = 45, hjust = 1)
+ # ) +
+  scale_x_discrete(labels=c("wh","NP")) +
+  scale_y_continuous(limits=c(0, 1)) +
+  scale_fill_manual(values=cbPalette[c(1,2)], name = "", breaks=c(0, 1), labels=c("-Prominence", "+Prominence")) 
+fc_wh_plot
+
+
+
+
+fc_ans_dens <-  ggplot(fc_ans, aes(x=proportion, y= n, fill= foc)) +
+  geom_bar(stat="identity") + 
+  facet_grid(whnp ~ foc, labeller=labeller(whnp = lwhnp, foc= lfoc)) + 
+  labs(x = "%of wh-response", y  = "No.of participants") +
+  scale_fill_manual(values=cbPalette[c(1,4)], name="", labels = lfoc) +
+  theme_bw()+
+  scale_x_continuous(breaks=c(0.0,0.25,0.5,0.75,1.0)) +
+  scale_y_continuous(limits=c(0, 3), breaks=c(0,1,2,3))
+
+fc_ans_dens
+```
+
+The statistics
+```{r}
+df_fc_k = filter(df_fc, age_group==1)
+df_yn_k = filter(df_yn, age_group==1)
+m1 <- glmer(formula = wh_resp ~age_group*whnp*vnotv+(1|participant)+(1|no), family = binomial, data = df_yn)
+m2 <- glmer(formula = wh_resp ~age_group+(1|participant)+(1|no), family = binomial, data = df_yn)
+m3 <- glmer(formula = wh_resp ~whnp+(1|participant)+(1|no), family = binomial, data = df_yn)
+m4 <- glm(wh_resp~age_group+whnp, family = binomial, data = df_yn) 
+
+m5 <- glmer(formula = wh_resp ~whnp+vnotv+(1|participant)+(1|no), family = binomial, data = df_yn_k)
+m6 <- glm(wh_resp~vnotv+whnp, family = binomial, data = df_yn_k) 
+
+
+summary(m1)
+summary(m2)
+summary(m3)
+summary(m4)
+summary(m5)
+summary(m6)
+broom::tidy(m3)
+exp(broom::tidy(m3)$estimate)
+
+df_fc$car <- as.factor(df_fc$car)
+#m1_fc <- glmer(formula = car ~ age_group*whnp*foc+ (1|participant)+(1|no), family = binomial, data = df_fc)
+m2_fc <- glmer(formula = car ~foc*whnp+ (1|participant) +(1|no), family = binomial, data = df_fc)
+
+m3_fc <- glm(car~foc+whnp+age_group, family = binomial, data = df_fc)
+
+m4_fc <- glm(car~foc+whnp+foc*whnp, family = binomial, data = df_fc)
+
+m5_fc <- glm(car~foc, family = binomial, data = df_fc)
+
+m6_fc <- glm(car~foc*whnp, family = binomial, data = df_fc)
+
+m7_fc <- glmer(formula = car ~foc + whnp + (1|participant) +(1|no), family = binomial, data = df_fc)
+
+m8_fc <- glm(car~whnp+foc, family = binomial, data = df_fc)
+m9_fc <- glmer(formula = car ~foc+whnp+ (1|participant) +(1|no), family = binomial, data = df_fc_k)
+summary(m2_fc)
+summary(m3_fc)
+summary(m4_fc)
+summary(m6_fc)
+summary(m8_fc)
+summary(m9_fc)
+
+broom::tidy(m2_fc)
+exp(broom::tidy(m2_fc)$estimate)
+
+broom::tidy(m3_fc)
+exp(broom::tidy(m3_fc)$estimate)
+
+
+broom::tidy(m7_fc)
+exp(broom::tidy(m7_fc)$estimate)
+```
+
