@@ -1,6 +1,42 @@
 # scratch work during group session
 
-# Julie's data
-library(readxl)
+# some loop practice
 
-julie <- read_excel("Julie/Summary_Exp2.xlsx")
+for(this_number in 1:10000) {
+    if(this_number %% 1000 == 0) { 
+        cat("starting number", this_number, "\n") 
+    }
+    result <- this_number * 3
+}
+
+mylist <- list(0, "cheese", TRUE)
+for(this_thing in mylist) {
+    if(is.logical(this_thing)) {
+        cat("this is very logical\n")
+    } else if(is.numeric(this_thing)) {
+        cat("this is not very logical, but at least it's a number\n")
+    } else {
+        cat("this is not very logical\n")
+    }
+}
+
+# Julianne's data issue
+
+disfluencies <- data.frame(ID = c(1, 2),
+                           word = c(5, 3),
+                           um = c(2, 1))
+
+disfluencies$total <- apply(disfluencies[, 2:3], 1, sum)
+sapply(disfluencies$total, 
+       function(x) rep(disfluencies$ID, each = x))
+
+make_rows <- function(ID_chunk) {
+    output <- data.frame(ID = unique(ID_chunk$ID),
+                         response = c(rep(0, ID_chunk$word),
+                                      rep(1, ID_chunk$um)))
+    output
+}
+
+dislong <- disfluencies %>% group_by(ID) %>%
+    do(make_rows(.))
+dislong
